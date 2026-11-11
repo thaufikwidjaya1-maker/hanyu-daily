@@ -49,12 +49,25 @@ jobs:
       - name: Build installable APK
         run: gradle :app:assembleDebug --stacktrace
 
-      - name: Rename and hash APK
+      - name: Rename, verify signature, and audit permissions
         shell: bash
         run: |
+          set -euo pipefail
           cp app/build/outputs/apk/debug/app-debug.apk HanyuDaily-v6-safe.apk
           test -s HanyuDaily-v6-safe.apk
           sha256sum HanyuDaily-v6-safe.apk | tee HanyuDaily-v6-safe.apk.sha256
+
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+          test -n "$APKSIGNER"
+          test -n "$AAPT"
+
+          "$APKSIGNER" verify --verbose --print-certs HanyuDaily-v6-safe.apk | tee HanyuDaily-v6-safe.signature.txt
+          "$AAPT" dump permissions HanyuDaily-v6-safe.apk | tee HanyuDaily-v6-safe.permissions.txt
+
+          grep -q "android.permission.INTERNET" HanyuDaily-v6-safe.permissions.txt
+          grep -q "android.permission.RECORD_AUDIO" HanyuDaily-v6-safe.permissions.txt
+          ! grep -Eq "CAMERA|ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION|READ_CONTACTS|WRITE_CONTACTS|READ_SMS|SEND_SMS|READ_PHONE|READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE" HanyuDaily-v6-safe.permissions.txt
 
       - name: Upload CI artifact
         uses: actions/upload-artifact@v4
@@ -63,5 +76,7 @@ jobs:
           path: |
             HanyuDaily-v6-safe.apk
             HanyuDaily-v6-safe.apk.sha256
+            HanyuDaily-v6-safe.signature.txt
+            HanyuDaily-v6-safe.permissions.txt
           if-no-files-found: error
           retention-days: 90
